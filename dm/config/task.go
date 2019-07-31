@@ -220,7 +220,6 @@ type TaskConfig struct {
 
 	Name       string `yaml:"name"`
 	TaskMode   string `yaml:"task-mode"`
-	IsIgnore   bool	  `yaml:"is-ignore"`
 	IsSharding bool   `yaml:"is-sharding"`
 	//  treat it as hidden configuration
 	IgnoreCheckingItems []string `yaml:"ignore-checking-items"`
@@ -447,7 +446,6 @@ func (c *TaskConfig) SubTaskConfigs(sources map[string]DBConfig) ([]*SubTaskConf
 
 		cfg := NewSubTaskConfig()
 		cfg.IsSharding = c.IsSharding
-		cfg.IsIgnore = c.IsIgnore
 		cfg.OnlineDDLScheme = c.OnlineDDLScheme
 		cfg.IgnoreCheckingItems = c.IgnoreCheckingItems
 		cfg.Name = c.Name
