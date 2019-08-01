@@ -138,13 +138,13 @@ func (conn *Conn) executeSQLCustomRetry(ctx *tcontext.Context, sqls []string, en
 			tidbExecutionErrorCounter.WithLabelValues(conn.cfg.Name).Inc()
 			dupErr := errors.Cause(err) // Modify the SQL and try again for ErrDupEntry
 			if isMySQLError(dupErr, tmysql.ErrDupEntry) {
-				newSql, modErr := modifySql(conn.db, err, sqls[1])
+				newSQL, modErr := modifySQL(conn.db, err, sqls[1])
 				if modErr != nil {
 					ctx.L().Info("execute statement", zap.String("modErr", fmt.Sprint(modErr)))
 					return errors.Trace(err)
 				}
-				sqls[1] = newSql
-				i -= 1
+				sqls[1] = newSQL
+				i--
 				dupErrFlag = true
 				continue
 			} else if isMySQLError(dupErr, tmysql.ErrParse) && dupErrFlag {
@@ -270,7 +270,7 @@ func isMySQLError(err error, code uint16) bool {
 	return ok && e.Number == code
 }
 
-func modifySql(db *sql.DB, err error, sql string) (string, error) {
+func modifySQL(db *sql.DB, err error, sql string) (string, error) {
 	dupData := ""
 	var table string
 	reg := regexp.MustCompile(`^INSERT INTO .*?VALUES`)
@@ -323,10 +323,10 @@ func modifySql(db *sql.DB, err error, sql string) (string, error) {
 		if tmpColumnName == columnName {
 			break
 		}
-		pos += 1
+		pos++
 	}
 
-	newSql, errorData, delErr := delDupEntry(sql, dupData, pos) // Delete duplicate data pair
+	newSQL, errorData, delErr := delDupEntry(sql, dupData, pos) // Delete duplicate data pair
 	if delErr != nil {
 		return sql, delErr
 	}
@@ -335,7 +335,7 @@ func modifySql(db *sql.DB, err error, sql string) (string, error) {
 	if logErr != nil {
 		return sql, logErr
 	}
-	return newSql, nil
+	return newSQL, nil
 }
 
 func getDupEntry(err error) (string, string, error) {
@@ -357,8 +357,8 @@ func getDupEntry(err error) (string, string, error) {
 
 func delDupEntry(target, dupData string, pos int) (string, string, error) {
 	var trxStart int
-	var del_res string  // SQL statement after deduplication
-	var dup_data string // Duplicate data pair
+	var delRes string  // SQL statement after deduplication
+	var dupDataPair string // Duplicate data pair
 	trxStart = 0
 	dataIn := false // Use a bool type to record whether the current data ends or not, avoiding encountering ( and ) in the data that causes the current data pair to be considered finished or restarted
 	dataNow := 0    // Record the start of each match
@@ -371,19 +371,19 @@ func delDupEntry(target, dupData string, pos int) (string, string, error) {
 			if dataIn == false {
 				trxStart = i             // Left edge position of deleted data
 				if target[i+1] != '\'' { // For non-string data after (
-					nowPos += 1
+					nowPos++
 					dataNow = i
 					isSymbol = 2
 				}
 			}
 		case '\\': // When an escape character is encountered, need to skip the next character to avoid the effect of characters such as ' "
-			i += 1
+			i++
 			continue
 		case '\'':
 			if dataIn == false {
 				dataIn = true
 				isSymbol = 1
-				nowPos += 1
+				nowPos++
 				dataNow = i
 			} else {
 				dataIn = false
@@ -396,7 +396,7 @@ func delDupEntry(target, dupData string, pos int) (string, string, error) {
 			}
 		case ',':
 			if isSymbol == 0 && dataIn == false && target[i-1] != ')' && target[i+1] != '\'' { // No "," can appear before the beginning of non-string data, and cannot between the string data, but between the "(" and ")", and the last bit cannot be a "'"
-				nowPos += 1
+				nowPos++
 				dataNow = i
 				isSymbol = 2
 			} else if isSymbol == 2 {
@@ -407,7 +407,7 @@ func delDupEntry(target, dupData string, pos int) (string, string, error) {
 					}
 				}
 				if target[i+1] != '\'' { // The "," may be the beginning of another data at the same time as the end of the data
-					nowPos += 1
+					nowPos++
 					dataNow = i
 					isSymbol = 2
 				}
@@ -427,19 +427,19 @@ func delDupEntry(target, dupData string, pos int) (string, string, error) {
 					if target[i+1] == ';' { // If the next digit is ";", delete the "," before the data
 						tmpSymbol := 2 // Find a "," or "S" that before the duplicate data pair
 						for target[trxStart-tmpSymbol] != ',' && target[trxStart-tmpSymbol] != 'S' {
-							tmpSymbol += 1
+							tmpSymbol++
 						}
-						del_res = target[:trxStart-tmpSymbol] + target[i+1:]
+						delRes = target[:trxStart-tmpSymbol] + target[i+1:]
 					} else {
-						del_res = target[:trxStart] + target[i+2:]
+						delRes = target[:trxStart] + target[i+2:]
 					}
-					dup_data = target[trxStart : i+1]
-					return del_res, dup_data, nil
+					dupDataPair = target[trxStart : i+1]
+					return delRes, dupDataPair, nil
 				}
 			}
 		}
 	}
-	return del_res, "", errors.New("Can't find dup Error")
+	return delRes, "", errors.New("Can't find dup Error")
 }
 
 func errorLog(dupDataSQL, errorTable, errorData, errorKey, errorPos string) error {
