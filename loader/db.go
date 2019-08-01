@@ -16,13 +16,13 @@ package loader
 import (
 	"database/sql"
 	"fmt"
-	"time"
-	"os"
-	"regexp"
-	"strconv"
 	"github.com/pingcap/dm/dm/config"
 	tcontext "github.com/pingcap/dm/pkg/context"
 	"github.com/pingcap/dm/pkg/log"
+	"os"
+	"regexp"
+	"strconv"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/pingcap/errors"
@@ -139,7 +139,7 @@ func (conn *Conn) executeSQLCustomRetry(ctx *tcontext.Context, sqls []string, en
 			dupErr := errors.Cause(err) // Modify the SQL and try again for ErrDupEntry
 			if isMySQLError(dupErr, tmysql.ErrDupEntry) {
 				newSql, modErr := modifySql(conn.db, err, sqls[1])
-				if modErr != nil{
+				if modErr != nil {
 					ctx.L().Info("execute statement", zap.String("modErr", fmt.Sprint(modErr)))
 					return errors.Trace(err)
 				}
@@ -147,7 +147,7 @@ func (conn *Conn) executeSQLCustomRetry(ctx *tcontext.Context, sqls []string, en
 				i -= 1
 				dupErrFlag = true
 				continue
-			}else if isMySQLError(dupErr, tmysql.ErrParse) && dupErrFlag{
+			} else if isMySQLError(dupErr, tmysql.ErrParse) && dupErrFlag {
 				ctx.L().Warn("execute statement", zap.String("Modified", "All data is dupError"))
 				return nil // All data is dupError
 			}
@@ -270,69 +270,69 @@ func isMySQLError(err error, code uint16) bool {
 	return ok && e.Number == code
 }
 
-func modifySql(db *sql.DB, err error, sql string) (string, error){
+func modifySql(db *sql.DB, err error, sql string) (string, error) {
 	dupData := ""
 	var table string
 	reg := regexp.MustCompile(`^INSERT INTO .*?VALUES`)
 	if reg.MatchString(sql) {
 		tmpTable := reg.FindAllString(sql, 1)
-		table = tmpTable[0][13:len(tmpTable[0]) - 8]
-	}else{
+		table = tmpTable[0][13 : len(tmpTable[0])-8]
+	} else {
 		return sql, errors.New("Can't get table name")
 	}
 
 	tmpDupData, keyName, getErr := getDupEntry(err) // Get duplicate data and index key name
-	if getErr != nil{
+	if getErr != nil {
 		return sql, getErr
 	}
 	// The ' and " in the dupData obtained from the error message has no escape character \ , so the escape character must be added after obtaining dupData
-	for i := 0; i < len(tmpDupData); i++{
-		if tmpDupData[i] == '\'' || tmpDupData[i] == '"' || tmpDupData[i] == '\\'{
+	for i := 0; i < len(tmpDupData); i++ {
+		if tmpDupData[i] == '\'' || tmpDupData[i] == '"' || tmpDupData[i] == '\\' {
 			dupData += "\\" + string(tmpDupData[i])
-		}else{
+		} else {
 			dupData += string(tmpDupData[i])
 		}
 	}
 
 	rows, err := db.Query("SELECT column_name FROM INFORMATION_SCHEMA.`KEY_COLUMN_USAGE` WHERE table_name='" + table + "' AND constraint_name=" + keyName)
 
-	if err != nil{
+	if err != nil {
 		return sql, err
 	}
 
 	var columnName string
 	for rows.Next() {
 		err := rows.Scan(&columnName)
-		if err != nil{
+		if err != nil {
 			return sql, err
 		}
 	}
 
 	rows, err = db.Query("SELECT column_name FROM information_schema.columns WHERE table_name='" + table + "';")
-	if err != nil{
+	if err != nil {
 		return sql, err
 	}
 	pos := 1
 
-	for rows.Next(){
+	for rows.Next() {
 		var tmpColumnName string
 		err := rows.Scan(&tmpColumnName)
-		if err != nil{
+		if err != nil {
 			return sql, err
 		}
-		if tmpColumnName == columnName{
+		if tmpColumnName == columnName {
 			break
 		}
 		pos += 1
 	}
 
 	newSql, errorData, delErr := delDupEntry(sql, dupData, pos) // Delete duplicate data pair
-	if delErr != nil{
+	if delErr != nil {
 		return sql, delErr
 	}
 
 	logErr := errorLog(errorData, table, dupData, columnName, strconv.Itoa(pos)) // Write dupdata to the errorlog
-	if logErr != nil{
+	if logErr != nil {
 		return sql, logErr
 	}
 	return newSql, nil
@@ -340,37 +340,37 @@ func modifySql(db *sql.DB, err error, sql string) (string, error){
 
 func getDupEntry(err error) (string, string, error) {
 	var keyName string
-	if len(fmt.Sprint(err)) < 40{
+	if len(fmt.Sprint(err)) < 40 {
 		return "", "", errors.New("Incorrect error information")
 	}
 	reg := regexp.MustCompile(`for key '[^ ]*'`)
 	tmpKeyName := reg.FindAllString(fmt.Sprint(err), -1)
 
 	if reg.MatchString(fmt.Sprint(err)) {
-		keyName = tmpKeyName[len(tmpKeyName) - 1][8:]
-	}else{
+		keyName = tmpKeyName[len(tmpKeyName)-1][8:]
+	} else {
 		return "", "", errors.New("Can't find dupEntry key")
 	}
-	dupData := fmt.Sprint(err)[29:len(fmt.Sprint(err)) - len(tmpKeyName[len(tmpKeyName) - 1]) - 2]
+	dupData := fmt.Sprint(err)[29 : len(fmt.Sprint(err))-len(tmpKeyName[len(tmpKeyName)-1])-2]
 	return dupData, keyName, nil
 }
 
-func delDupEntry(target, dupData string, pos int) (string, string, error){
+func delDupEntry(target, dupData string, pos int) (string, string, error) {
 	var trxStart int
-	var del_res string // SQL statement after deduplication
+	var del_res string  // SQL statement after deduplication
 	var dup_data string // Duplicate data pair
 	trxStart = 0
 	dataIn := false // Use a bool type to record whether the current data ends or not, avoiding encountering ( and ) in the data that causes the current data pair to be considered finished or restarted
-	dataNow := 0 // Record the start of each match
-	nowPos := 0 // Record the location of the current data, and compare whether the data is equal to dupData only when it is equal to pos
-	isSymbol := 0 // Records whether the current data carries ', Used to record data locations and compare data, 0 for stateless, 1 for currently traversing string data, 2 for currently traversing non-string data
+	dataNow := 0    // Record the start of each match
+	nowPos := 0     // Record the location of the current data, and compare whether the data is equal to dupData only when it is equal to pos
+	isSymbol := 0   // Records whether the current data carries ', Used to record data locations and compare data, 0 for stateless, 1 for currently traversing string data, 2 for currently traversing non-string data
 	isFind := false // Use a variable to record whether duplicate values have been found
 	for i := 0; i < len(target); i++ {
 		switch target[i] {
 		case '(':
 			if dataIn == false {
-				trxStart = i // Left edge position of deleted data
-				if target[i + 1] != '\'' { // For non-string data after (
+				trxStart = i             // Left edge position of deleted data
+				if target[i+1] != '\'' { // For non-string data after (
 					nowPos += 1
 					dataNow = i
 					isSymbol = 2
@@ -385,28 +385,28 @@ func delDupEntry(target, dupData string, pos int) (string, string, error){
 				isSymbol = 1
 				nowPos += 1
 				dataNow = i
-			}else {
+			} else {
 				dataIn = false
 				isSymbol = 0
-				if nowPos == pos{ // Find a string data
-					if target[dataNow + 1 : i] == dupData{
+				if nowPos == pos { // Find a string data
+					if target[dataNow+1:i] == dupData {
 						isFind = true
 					}
 				}
 			}
 		case ',':
-			if isSymbol == 0 && dataIn == false && target[i - 1] != ')' && target[i + 1] != '\'' { // No "," can appear before the beginning of non-string data, and cannot between the string data, but between the "(" and ")", and the last bit cannot be a "'"
+			if isSymbol == 0 && dataIn == false && target[i-1] != ')' && target[i+1] != '\'' { // No "," can appear before the beginning of non-string data, and cannot between the string data, but between the "(" and ")", and the last bit cannot be a "'"
 				nowPos += 1
 				dataNow = i
 				isSymbol = 2
-			}else if isSymbol == 2{
+			} else if isSymbol == 2 {
 				isSymbol = 0
-				if nowPos == pos{ // Find a non-string data
-					if target[dataNow + 1 : i] == dupData{
+				if nowPos == pos { // Find a non-string data
+					if target[dataNow+1:i] == dupData {
 						isFind = true
 					}
 				}
-				if target[i + 1] != '\''{ // The "," may be the beginning of another data at the same time as the end of the data
+				if target[i+1] != '\'' { // The "," may be the beginning of another data at the same time as the end of the data
 					nowPos += 1
 					dataNow = i
 					isSymbol = 2
@@ -414,26 +414,26 @@ func delDupEntry(target, dupData string, pos int) (string, string, error){
 			}
 		case ')':
 			if dataIn == false {
-				if isSymbol == 2{ // For non-string data before )
+				if isSymbol == 2 { // For non-string data before )
 					isSymbol = 0
-					if nowPos == pos{ // Find a non-string data
-						if target[dataNow + 1 : i] == dupData{
+					if nowPos == pos { // Find a non-string data
+						if target[dataNow+1:i] == dupData {
 							isFind = true
 						}
 					}
 				}
 				nowPos = 0
-				if isFind == true{
-					if target[i + 1] == ';'{ // If the next digit is ";", delete the "," before the data
+				if isFind == true {
+					if target[i+1] == ';' { // If the next digit is ";", delete the "," before the data
 						tmpSymbol := 2 // Find a "," or "S" that before the duplicate data pair
-						for target[trxStart - tmpSymbol] != ',' && target[trxStart - tmpSymbol] != 'S'{
+						for target[trxStart-tmpSymbol] != ',' && target[trxStart-tmpSymbol] != 'S' {
 							tmpSymbol += 1
 						}
-						del_res = target[:trxStart - tmpSymbol] + target[i + 1:]
-					}else{
-						del_res = target[:trxStart] + target[i + 2:]
+						del_res = target[:trxStart-tmpSymbol] + target[i+1:]
+					} else {
+						del_res = target[:trxStart] + target[i+2:]
 					}
-					dup_data = target[trxStart:i + 1]
+					dup_data = target[trxStart : i+1]
 					return del_res, dup_data, nil
 				}
 			}
@@ -442,7 +442,7 @@ func delDupEntry(target, dupData string, pos int) (string, string, error){
 	return del_res, "", errors.New("Can't find dup Error")
 }
 
-func errorLog(dupDataSQL, errorTable, errorData, errorKey, errorPos string) error{
+func errorLog(dupDataSQL, errorTable, errorData, errorKey, errorPos string) error {
 	path := "./dupDataFile.txt"
 	var dupDataFile *os.File
 	_, err := os.Stat(path) // Detects if the file exists
@@ -451,7 +451,7 @@ func errorLog(dupDataSQL, errorTable, errorData, errorKey, errorPos string) erro
 		if err != nil {
 			return err
 		}
-	}else {
+	} else {
 		dupDataFile, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0666)
 		if err != nil {
 			return err
