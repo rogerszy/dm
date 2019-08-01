@@ -357,7 +357,7 @@ func getDupEntry(err error) (string, string, error) {
 
 func delDupEntry(target, dupData string, pos int) (string, string, error) {
 	var trxStart int
-	var delRes string  // SQL statement after deduplication
+	var delRes string      // SQL statement after deduplication
 	var dupDataPair string // Duplicate data pair
 	trxStart = 0
 	dataIn := false // Use a bool type to record whether the current data ends or not, avoiding encountering ( and ) in the data that causes the current data pair to be considered finished or restarted
